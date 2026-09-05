@@ -1,0 +1,4 @@
+# dsh-workbench-ui bundle layer: insert the workbench host plugin into the profile.
+- insert:
+    - id: dsh-workbench-ui
+      name: "@dsh-external/dsh-workbench-ui"
