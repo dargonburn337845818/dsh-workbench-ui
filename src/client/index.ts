@@ -201,6 +201,10 @@ html.dark [data-wb-panel] {
 }
 [data-wb-panel] .wb-proj:hover { border-color: var(--border); }
 [data-wb-panel] .wb-proj.active { border-left-color: var(--accent); border-color: var(--border); }
+[data-wb-panel] .wb-proj-main { flex: 1; min-width: 0; }
+[data-wb-panel] .wb-proj .wb-del { flex: none; padding: 2px 5px; font-size: 11px; }
+[data-wb-panel] .wb-btn.danger { color: #dc2626; border-color: #fca5a5; }
+[data-wb-panel] .wb-btn.danger:hover { background: #dc2626; color: #fff; border-color: #dc2626; }
 [data-wb-panel] .wb-dot { width: 7px; height: 7px; background: var(--muted); flex: none; }
 [data-wb-panel] .wb-dot.ok { background: #16a34a; }
 [data-wb-panel] .wb-dot.warn { background: #d97706; }
@@ -369,6 +373,7 @@ function WorkbenchPanel(props: any): any {
   const [gateEv, setGateEv] = useState('')
   const [claim, setClaim] = useState('')
   const [claimSrc, setClaimSrc] = useState('')
+  const [confirmDeleteId, setConfirmDeleteId] = useState('')
 
   async function refreshProjects(keepDetail = true): Promise<void> {
     if (loading) return
@@ -447,6 +452,39 @@ function WorkbenchPanel(props: any): any {
       setMsg('已创建项目。下一步：把目标写清楚。')
     } catch (e: any) {
       setMsg('新建失败：' + String(e?.message ?? e))
+    }
+  }
+
+  function askDeleteProject(id: string): void {
+    if (confirmDeleteId === id) {
+      setConfirmDeleteId('')
+      setMsg('')
+    } else {
+      setConfirmDeleteId(id)
+      setMsg('再点一次“确认”删除该项目，删除后不可恢复。')
+    }
+  }
+
+  async function deleteProject(id: string): Promise<void> {
+    const target = projects.find((p: any) => p.id === id)
+    const name = target?.title || id
+    setConfirmDeleteId('')
+    try {
+      const r = await request(`/project/${encodeURIComponent(id)}`, { method: 'DELETE' })
+      if (!r?.ok) throw new Error(r?.error || '删除失败')
+      if (selected === id) {
+        setSelected('')
+        setLedger(null)
+        setArtifacts([])
+        setEvidence([])
+        setArtifactPreview('')
+        setGoalDraft('')
+      }
+      const list = await request('/projects')
+      setProjects(list.projects ?? [])
+      setMsg(`已删除项目“${name}”。`)
+    } catch (e: any) {
+      setMsg('删除失败：' + String(e?.message ?? e))
     }
   }
 
@@ -559,13 +597,45 @@ function WorkbenchPanel(props: any): any {
     return createElement('div', {
       key: p.id,
       className: 'wb-proj' + (selected === p.id ? ' active' : ''),
-      onClick: () => setSelected(p.id),
+      onClick: () => {
+        setConfirmDeleteId('')
+        setSelected(p.id)
+      },
     }, [
       createElement('span', { className: 'wb-dot ' + dotClass }),
-      createElement('div', {}, [
+      createElement('div', { className: 'wb-proj-main' }, [
         createElement('div', { className: 'wb-proj-name' }, [p.title || p.id]),
         createElement('div', { className: 'wb-proj-meta' }, [`${p.stage} · ${p.gates_pass}/${p.gates_total} 门禁`]),
       ]),
+      ...(confirmDeleteId === p.id
+        ? [
+            createElement('button', {
+              className: 'wb-btn danger wb-del',
+              title: '确认删除，不可恢复',
+              onClick: (ev: any) => {
+                ev.stopPropagation()
+                void deleteProject(p.id)
+              },
+            }, ['确认']),
+            createElement('button', {
+              className: 'wb-btn wb-del',
+              title: '取消删除',
+              onClick: (ev: any) => {
+                ev.stopPropagation()
+                setConfirmDeleteId('')
+              },
+            }, ['取消']),
+          ]
+        : [
+            createElement('button', {
+              className: 'wb-btn danger wb-del',
+              title: '删除项目',
+              onClick: (ev: any) => {
+                ev.stopPropagation()
+                askDeleteProject(p.id)
+              },
+            }, ['删除']),
+          ]),
     ])
   })
 

@@ -80,6 +80,7 @@ DSH_CHECKOUT=<checkout> bash scripts/build.sh
 - 列出所有 `research-workbench/projects/` 下的项目
 - 看当前阶段、门禁、决策、冲突、待办、记忆
 - 新建项目
+- 删除项目（带确认，删除后不可恢复）
 - 加记忆、加待办
 - 记录一条门禁（阶段 + 验收项 + 证据）
 - 记一条带来源的 claim

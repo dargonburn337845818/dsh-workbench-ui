@@ -169,6 +169,11 @@ export function apply(ctx: any, config: Config): void {
           const r = await runWb(['init', body.id, '--title', body.title ?? body.id])
           return json(res, 200, { ok: true, output: r.stdout.trim() })
         }
+        if (req.method === 'DELETE' && action === 'project' && id) {
+          const deleteId = decodeURIComponent(id)
+          const r = await runWb(['delete', deleteId])
+          return json(res, 200, { ok: true, output: r.stdout.trim() })
+        }
         if (req.method === 'POST' && action === 'brief' && id) {
           const body = await readBody(req)
           const args: string[] = ['brief', id]
