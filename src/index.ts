@@ -8,6 +8,7 @@ import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import os from 'node:os'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import z from 'schemastery'
 
@@ -25,9 +26,9 @@ export const Config = z.object({
 })
 
 const WB_SCRIPT = process.env.WB_SCRIPT
-  || '$HOME/work/skills/expert-decision-consensus/tools/workbench_cli.py'
+  || path.join(os.homedir(), 'work', 'skills', 'expert-decision-consensus', 'tools', 'workbench_cli.py')
 const PROJECTS_DIR = process.env.WB_PROJECTS_DIR
-  || '$HOME/work/research-workbench/projects'
+  || path.join(os.homedir(), 'work', 'research-workbench', 'projects')
 
 async function runWb(args: string[]): Promise<{ stdout: string; stderr: string }> {
   return execFileAsync('python3', [WB_SCRIPT, ...args], {
