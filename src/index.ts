@@ -98,6 +98,15 @@ async function readBody(req: any): Promise<any> {
   })
 }
 
+async function readRaw(req: any): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = []
+    req.on('data', (chunk: Buffer) => { chunks.push(Buffer.from(chunk)) })
+    req.on('end', () => resolve(Buffer.concat(chunks)))
+    req.on('error', reject)
+  })
+}
+
 function safeName(name: string): string {
   return path.basename(name)
 }
@@ -134,17 +143,21 @@ export function apply(ctx: any, config: Config): void {
           if (!ledger) return json(res, 404, { ok: false, error: 'project not found' })
           let artifacts: string[] = []
           let evidence: string[] = []
+          let notes: string[] = []
           try {
             artifacts = (await fs.readdir(path.join(PROJECTS_DIR, id, 'artifacts'))).sort()
           } catch { /* no artifacts yet */ }
           try {
             evidence = (await fs.readdir(path.join(PROJECTS_DIR, id, 'evidence'))).sort()
           } catch { /* no evidence yet */ }
-          return json(res, 200, { ok: true, ledger, artifacts, evidence })
+          try {
+            notes = (await fs.readdir(path.join(PROJECTS_DIR, id, 'notes'))).sort()
+          } catch { /* no notes yet */ }
+          return json(res, 200, { ok: true, ledger, artifacts, evidence, notes })
         }
         if (req.method === 'GET' && action === 'search') {
           const q = url.searchParams.get('q') ?? ''
-          const source = url.searchParams.get('source') ?? 'openalex,crossref'
+          const source = url.searchParams.get('source') ?? 'openalex,crossref,semantic,europepmc'
           const limit = Number(url.searchParams.get('limit') ?? '5')
           if (!q) return json(res, 400, { ok: false, error: 'missing q' })
           const r = await runWb(['search', q, '--source', source, '--limit', String(limit), '--format', 'json'])
@@ -152,7 +165,7 @@ export function apply(ctx: any, config: Config): void {
           return json(res, 200, { ok: true, results })
         }
         if (req.method === 'GET' && action === 'artifact' && id && parts[5]) {
-          const name = safeName(parts[5])
+          const name = safeName(decodeURIComponent(parts[5]))
           const file = path.join(PROJECTS_DIR, id, 'artifacts', name)
           try {
             const buf = await fs.readFile(file)
@@ -160,6 +173,31 @@ export function apply(ctx: any, config: Config): void {
             res.end(buf)
           } catch {
             return json(res, 404, { ok: false, error: 'artifact not found' })
+          }
+          return
+        }
+        if (req.method === 'GET' && action === 'note' && id && parts[5]) {
+          const name = safeName(decodeURIComponent(parts[5]))
+          const file = path.join(PROJECTS_DIR, id, 'notes', name)
+          try {
+            const buf = await fs.readFile(file)
+            res.writeHead(200, { 'content-type': contentTypeOf(name), 'content-length': buf.length })
+            res.end(buf)
+          } catch {
+            return json(res, 404, { ok: false, error: 'note not found' })
+          }
+          return
+        }
+        if (req.method === 'GET' && action === 'note-asset' && id && parts[5] && parts[6]) {
+          const dir = safeName(decodeURIComponent(parts[5]))
+          const name = safeName(decodeURIComponent(parts[6]))
+          const file = path.join(PROJECTS_DIR, id, 'notes', dir, name)
+          try {
+            const buf = await fs.readFile(file)
+            res.writeHead(200, { 'content-type': contentTypeOf(name), 'content-length': buf.length })
+            res.end(buf)
+          } catch {
+            return json(res, 404, { ok: false, error: 'note asset not found' })
           }
           return
         }
@@ -216,6 +254,37 @@ export function apply(ctx: any, config: Config): void {
           if (body.evidence) args.push('--evidence', body.evidence)
           const r = await runWb(args)
           return json(res, 200, { ok: true, output: r.stdout.trim() })
+        }
+        if (req.method === 'POST' && action === 'ingest' && id) {
+          const name = safeName(decodeURIComponent(String(req.headers['x-filename'] || 'upload.pdf')))
+          const title = decodeURIComponent(String(url.searchParams.get('title') || name.replace(/\.[^/.]+$/, '')))
+          const buf = await readRaw(req)
+          const dir = path.join(PROJECTS_DIR, id, 'evidence')
+          await fs.mkdir(dir, { recursive: true })
+          const file = path.join(dir, name)
+          await fs.writeFile(file, buf)
+          const r = await runWb(['ingest', id, file, '--title', title])
+          const out = JSON.parse(r.stdout || '{}')
+          return json(res, 200, { ok: true, ...out, output: r.stdout.trim() })
+        }
+        if (req.method === 'POST' && action === 'graph' && id) {
+          const body = await readBody(req)
+          if (!body.query) return json(res, 400, { ok: false, error: 'missing query' })
+          const r = await runWb(['graph', id, body.query, '--top-n', String(body.top_n || 10)])
+          const out = JSON.parse(r.stdout || '{}')
+          return json(res, 200, { ok: true, ...out, output: r.stdout.trim() })
+        }
+        if (req.method === 'GET' && action === 'context' && id) {
+          const r = await runWb(['context', id])
+          return json(res, 200, { ok: true, context: r.stdout })
+        }
+        if (req.method === 'GET' && action === 'memory' && id && parts[5] === 'semantic') {
+          const q = url.searchParams.get('q') ?? ''
+          const limit = Number(url.searchParams.get('limit') ?? '5')
+          if (!q) return json(res, 400, { ok: false, error: 'missing q' })
+          const r = await runWb(['memory', id, 'semantic', q, '--limit', String(limit), '--format', 'json'])
+          const results = JSON.parse(r.stdout || '[]')
+          return json(res, 200, { ok: true, results })
         }
         return json(res, 404, { ok: false, error: 'unknown api' })
       } catch (e: any) {
